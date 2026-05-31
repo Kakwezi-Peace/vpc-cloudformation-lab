@@ -1,10 +1,7 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: >
   Kakwezi Peace - Securely Deploying Resources in a VPC Using CloudFormation
-  Multi-AZ VPC with public/private subnets, IGW, 2 NAT Gateways, 4 EC2 instances, SSM access only.
-
-
-# PARAMETERS
+  Multi-AZ VPC with public/private subnets, IGW, 2 NAT Gateways, 4 EC2 instances, SSM only.
 
 Parameters:
   InstanceType:
@@ -12,12 +9,9 @@ Parameters:
     Default: t2.micro
     Description: EC2 instance type for all instances
 
-
-# RESOURCES
-
 Resources:
 
-  # --- VPC ---
+  # VPC - our private network in AWS
   MyVPC:
     Type: AWS::EC2::VPC
     Properties:
@@ -28,7 +22,7 @@ Resources:
         - Key: Name
           Value: kakwezi-peace-vpc
 
-  # --- Internet Gateway (connects VPC to the internet) ---
+  # Internet Gateway - connects the VPC to the public internet
   InternetGateway:
     Type: AWS::EC2::InternetGateway
     Properties:
@@ -36,13 +30,14 @@ Resources:
         - Key: Name
           Value: kakwezi-peace-igw
 
+  # Attach Internet Gateway to the VPC
   AttachIGW:
     Type: AWS::EC2::VPCGatewayAttachment
     Properties:
       VpcId: !Ref MyVPC
       InternetGatewayId: !Ref InternetGateway
 
-  # --- Public Subnet AZ1 (has direct internet access) ---
+  # Public Subnet in AZ1 - web servers live here, reachable from internet
   PublicSubnet1:
     Type: AWS::EC2::Subnet
     Properties:
@@ -54,7 +49,7 @@ Resources:
         - Key: Name
           Value: kakwezi-peace-public-subnet-az1
 
-  # --- Public Subnet AZ2 (has direct internet access) ---
+  # Public Subnet in AZ2 - web servers live here, reachable from internet
   PublicSubnet2:
     Type: AWS::EC2::Subnet
     Properties:
@@ -66,7 +61,7 @@ Resources:
         - Key: Name
           Value: kakwezi-peace-public-subnet-az2
 
-  # --- Private Subnet AZ1 (no direct internet access) ---
+  # Private Subnet in AZ1 - app servers live here, hidden from internet
   PrivateSubnet1:
     Type: AWS::EC2::Subnet
     Properties:
@@ -78,7 +73,7 @@ Resources:
         - Key: Name
           Value: kakwezi-peace-private-subnet-az1
 
-  # --- Private Subnet AZ2 (no direct internet access) ---
+  # Private Subnet in AZ2 - app servers live here, hidden from internet
   PrivateSubnet2:
     Type: AWS::EC2::Subnet
     Properties:
@@ -90,7 +85,7 @@ Resources:
         - Key: Name
           Value: kakwezi-peace-private-subnet-az2
 
-  # --- Elastic IPs for NAT Gateways (fixed public IPs) ---
+  # Elastic IP for NAT Gateway 1 - fixed public IP address
   EIP1:
     Type: AWS::EC2::EIP
     DependsOn: AttachIGW
@@ -100,6 +95,7 @@ Resources:
         - Key: Name
           Value: kakwezi-peace-eip-az1
 
+  # Elastic IP for NAT Gateway 2 - fixed public IP address
   EIP2:
     Type: AWS::EC2::EIP
     DependsOn: AttachIGW
@@ -109,7 +105,7 @@ Resources:
         - Key: Name
           Value: kakwezi-peace-eip-az2
 
-  # --- NAT Gateway AZ1 (lets private instances reach internet, outbound only) ---
+  # NAT Gateway AZ1 - allows private subnet AZ1 to reach internet outbound only
   NatGateway1:
     Type: AWS::EC2::NatGateway
     Properties:
@@ -119,7 +115,7 @@ Resources:
         - Key: Name
           Value: kakwezi-peace-natgw-az1
 
-  # --- NAT Gateway AZ2 (each AZ has its own NAT, no cross-AZ dependency) ---
+  # NAT Gateway AZ2 - allows private subnet AZ2 to reach internet outbound only
   NatGateway2:
     Type: AWS::EC2::NatGateway
     Properties:
@@ -129,7 +125,7 @@ Resources:
         - Key: Name
           Value: kakwezi-peace-natgw-az2
 
-  # --- Public Route Table (routes internet traffic through IGW) ---
+  # Public Route Table - sends all internet traffic through the IGW
   PublicRouteTable:
     Type: AWS::EC2::RouteTable
     Properties:
@@ -146,6 +142,7 @@ Resources:
       DestinationCidrBlock: 0.0.0.0/0
       GatewayId: !Ref InternetGateway
 
+  # Associate public route table with both public subnets
   PublicSubnet1RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
@@ -158,7 +155,7 @@ Resources:
       SubnetId: !Ref PublicSubnet2
       RouteTableId: !Ref PublicRouteTable
 
-  # --- Private Route Table AZ1 (routes outbound traffic through NAT GW 1) ---
+  # Private Route Table AZ1 - outbound traffic goes through NAT GW 1 only
   PrivateRouteTable1:
     Type: AWS::EC2::RouteTable
     Properties:
@@ -180,7 +177,7 @@ Resources:
       SubnetId: !Ref PrivateSubnet1
       RouteTableId: !Ref PrivateRouteTable1
 
-  # --- Private Route Table AZ2 (routes outbound traffic through NAT GW 2) ---
+  # Private Route Table AZ2 - outbound traffic goes through NAT GW 2 only
   PrivateRouteTable2:
     Type: AWS::EC2::RouteTable
     Properties:
@@ -202,8 +199,8 @@ Resources:
       SubnetId: !Ref PrivateSubnet2
       RouteTableId: !Ref PrivateRouteTable2
 
-  # --- Security Group for Public Web Servers ---
-  # Allows HTTP from internet and ICMP (ping) from within VPC. No SSH.
+  # Security Group for public web servers
+  # Allows HTTP from internet and ICMP ping from within VPC - no SSH
   WebServerSG:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -225,8 +222,8 @@ Resources:
         - Key: Name
           Value: kakwezi-peace-web-sg
 
-  # --- Security Group for Private App Servers ---
-  # Allows only ICMP (ping) from within VPC for validation. No SSH, no HTTP.
+  # Security Group for private app servers
+  # Allows ICMP ping from within VPC only - no SSH, no inbound HTTP
   AppServerSG:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -244,9 +241,7 @@ Resources:
         - Key: Name
           Value: kakwezi-peace-app-sg
 
-  # --- IAM Role for Session Manager ---
-  # Attaches AmazonSSMManagedInstanceCore so all instances
-  # can be accessed via Session Manager instead of SSH.
+  # IAM Role for Session Manager - no SSH needed, AWS manages access securely
   SSMInstanceRole:
     Type: AWS::IAM::Role
     Properties:
@@ -264,6 +259,7 @@ Resources:
         - Key: Name
           Value: kakwezi-peace-ssm-role
 
+  # Instance profile wraps the IAM role so EC2 can use it
   SSMInstanceProfile:
     Type: AWS::IAM::InstanceProfile
     Properties:
@@ -271,13 +267,13 @@ Resources:
       Roles:
         - !Ref SSMInstanceRole
 
-  # --- Public Web Server 1 (AZ1) ---
-  # Apache installed via UserData, displays name and lab name in browser.
+  # Public Web Server 1 in AZ1
+  # Apache installed via UserData, displays Kakwezi Peace name in browser
   WebServer1:
     Type: AWS::EC2::Instance
     Properties:
       InstanceType: !Ref InstanceType
-      ImageId: '{{resolve:ssm:/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2}}'
+      ImageId: ami-00e801948462f718a
       SubnetId: !Ref PublicSubnet1
       IamInstanceProfile: !Ref SSMInstanceProfile
       SecurityGroupIds:
@@ -316,12 +312,12 @@ Resources:
         - Key: Name
           Value: kakwezi-peace-web-server-1-az1
 
-  # --- Public Web Server 2 (AZ2) ---
+  # Public Web Server 2 in AZ2
   WebServer2:
     Type: AWS::EC2::Instance
     Properties:
       InstanceType: !Ref InstanceType
-      ImageId: '{{resolve:ssm:/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2}}'
+      ImageId: ami-00e801948462f718a
       SubnetId: !Ref PublicSubnet2
       IamInstanceProfile: !Ref SSMInstanceProfile
       SecurityGroupIds:
@@ -360,13 +356,12 @@ Resources:
         - Key: Name
           Value: kakwezi-peace-web-server-2-az2
 
-  # --- Private App Server 1 (AZ1) ---
-  # No Apache. Private subnet only. Accessed via Session Manager only.
+  # Private App Server 1 in AZ1 - no Apache, private only, SSM access only
   AppServer1:
     Type: AWS::EC2::Instance
     Properties:
       InstanceType: !Ref InstanceType
-      ImageId: '{{resolve:ssm:/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2}}'
+      ImageId: ami-00e801948462f718a
       SubnetId: !Ref PrivateSubnet1
       IamInstanceProfile: !Ref SSMInstanceProfile
       SecurityGroupIds:
@@ -375,12 +370,12 @@ Resources:
         - Key: Name
           Value: kakwezi-peace-app-server-1-az1
 
-  # --- Private App Server 2 (AZ2) ---
+  # Private App Server 2 in AZ2 - no Apache, private only, SSM access only
   AppServer2:
     Type: AWS::EC2::Instance
     Properties:
       InstanceType: !Ref InstanceType
-      ImageId: '{{resolve:ssm:/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2}}'
+      ImageId: ami-00e801948462f718a
       SubnetId: !Ref PrivateSubnet2
       IamInstanceProfile: !Ref SSMInstanceProfile
       SecurityGroupIds:
@@ -389,9 +384,7 @@ Resources:
         - Key: Name
           Value: kakwezi-peace-app-server-2-az2
 
-# OUTPUTS
-# Shown in the CloudFormation Outputs tab after deployment.
-
+# Outputs shown in CloudFormation after deployment
 Outputs:
 
   VPCId:
@@ -407,9 +400,9 @@ Outputs:
     Value: !GetAtt WebServer2.PublicIp
 
   AppServer1PrivateIP:
-    Description: Use this IP to ping App Server 1 from a web server
+    Description: Use this IP to ping App Server 1 from a web server via Session Manager
     Value: !GetAtt AppServer1.PrivateIp
 
   AppServer2PrivateIP:
-    Description: Use this IP to ping App Server 2 from a web server
+    Description: Use this IP to ping App Server 2 from a web server via Session Manager
     Value: !GetAtt AppServer2.PrivateIp
