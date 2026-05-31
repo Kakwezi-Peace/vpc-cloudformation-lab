@@ -1,0 +1,461 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Secure Multi-AZ VPC Lab - Kakwezi Peace
+  Deploys a highly available VPC across 2 Availability Zones with public and
+  private subnets, Internet Gateway, two NAT Gateways, four EC2 instances
+  (2 public web servers + 2 private app servers), and SSM access only.
+
+
+# PARAMETERS: Allows you to choose the EC2 instance type when deploying the stack.
+
+Parameters:
+  InstanceType:
+    Type: String
+    Default: t2.micro
+    Description: EC2 instance type for all instances
+
+
+# MAPPINGS: Selects the correct Amazon Linux 2 AMI based on the AWS region you deploy in.
+
+Mappings:
+  RegionMap:
+    us-east-1:
+      AMI: ami-0453ec754f44f9a4a
+    us-east-2:
+      AMI: ami-0cd3c7f72edd5b06d
+    us-west-1:
+      AMI: ami-0ce2cb35386fc22e9
+    us-west-2:
+      AMI: ami-05572e392e80aee89
+    eu-west-1:
+      AMI: ami-0e9d4bc9dc9f8c6e9
+    eu-central-1:
+      AMI: ami-09042b2f6d07d164a
+    ap-southeast-1:
+      AMI: ami-0df7a207adb9748c7
+    ap-northeast-1:
+      AMI: ami-0e25eba2025eea319
+
+
+# RESOURCES: Everything AWS will create when you deploy this template.
+
+Resources:
+
+
+  # 1. VPC:  Your private network inside AWS. CIDR 10.0.0.0/16 gives you 65,536 IPs.
+
+  MyVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: kakwezi-peace-vpc
+
+
+  # 2. INTERNET GATEWAY: The door between your VPC and the public internet.
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: kakwezi-peace-igw
+
+  # Attach the Internet Gateway to the VPC
+  AttachIGW:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref MyVPC
+      InternetGatewayId: !Ref InternetGateway
+
+
+  # 3. SUBNETS: Two public subnets (one per AZ) and two private subnets (one per AZ).
+
+
+  # Public Subnet in AZ1
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: kakwezi-peace-public-subnet-az1
+
+  # Public Subnet in AZ2
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: !Select [ 1, !GetAZs '' ]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: kakwezi-peace-public-subnet-az2
+
+  # Private Subnet in AZ1
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      CidrBlock: 10.0.3.0/24
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: kakwezi-peace-private-subnet-az1
+
+  # Private Subnet in AZ2
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      CidrBlock: 10.0.4.0/24
+      AvailabilityZone: !Select [ 1, !GetAZs '' ]
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: kakwezi-peace-private-subnet-az2
+
+
+  # 4. ELASTIC IPs FOR NAT GATEWAYS: Each NAT Gateway needs a fixed public IP address.
+
+  EIP1:
+    Type: AWS::EC2::EIP
+    DependsOn: AttachIGW
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: kakwezi-peace-eip-az1
+
+  EIP2:
+    Type: AWS::EC2::EIP
+    DependsOn: AttachIGW
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: kakwezi-peace-eip-az2
+
+
+  # 5. NAT GATEWAYS (one per AZ):Allow private instances to reach the internet (outbound only).
+
+  NatGateway1:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt EIP1.AllocationId
+      SubnetId: !Ref PublicSubnet1
+      Tags:
+        - Key: Name
+          Value: kakwezi-peace-natgw-az1
+
+  NatGateway2:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt EIP2.AllocationId
+      SubnetId: !Ref PublicSubnet2
+      Tags:
+        - Key: Name
+          Value: kakwezi-peace-natgw-az2
+
+
+  # 6. ROUTE TABLES: Rules that tell traffic where to go :(Public Route Table (used by both public subnets) ---
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref MyVPC
+      Tags:
+        - Key: Name
+          Value: kakwezi-peace-public-rt
+
+  # Send all internet-bound traffic (0.0.0.0/0) through the Internet Gateway
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachIGW
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  # Associate public route table with Public Subnet AZ1
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  # Associate public route table with Public Subnet AZ2
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  # --- Private Route Table AZ1 (routes outbound traffic through NAT GW 1) ---
+  PrivateRouteTable1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref MyVPC
+      Tags:
+        - Key: Name
+          Value: kakwezi-peace-private-rt-az1
+
+  PrivateRoute1:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway1
+
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref PrivateRouteTable1
+
+  # --- Private Route Table AZ2 (routes outbound traffic through NAT GW 2) ---
+  PrivateRouteTable2:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref MyVPC
+      Tags:
+        - Key: Name
+          Value: kakwezi-peace-private-rt-az2
+
+  PrivateRoute2:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway2
+
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTable2
+
+  # 7. SECURITY GROUPS:Firewall rules for EC2 instances:Follows least-privilege: only allow what is strictly required. No SSH (port 22) is permitted anywhere.
+
+  WebServerSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for public web servers - HTTP and ICMP only
+      VpcId: !Ref MyVPC
+      SecurityGroupIngress:
+        # Allow HTTP from the internet
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+          Description: Allow HTTP from internet
+        # Allow ICMP (ping) from within the VPC for validation
+        - IpProtocol: icmp
+          FromPort: -1
+          ToPort: -1
+          CidrIp: 10.0.0.0/16
+          Description: Allow ping from within VPC
+      SecurityGroupEgress:
+        # Allow all outbound traffic
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+          Description: Allow all outbound
+      Tags:
+        - Key: Name
+          Value: kakwezi-peace-web-sg
+
+  # Security group for PRIVATE app servers: Allows: ICMP (ping) from within the VPC only
+  AppServerSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for private app servers - ICMP only
+      VpcId: !Ref MyVPC
+      SecurityGroupIngress:
+        # Allow ICMP (ping) from within the VPC for validation
+        - IpProtocol: icmp
+          FromPort: -1
+          ToPort: -1
+          CidrIp: 10.0.0.0/16
+          Description: Allow ping from within VPC
+      SecurityGroupEgress:
+        # Allow all outbound traffic (needed for NAT Gateway to work)
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+          Description: Allow all outbound
+      Tags:
+        - Key: Name
+          Value: kakwezi-peace-app-sg
+
+  # 8. IAM ROLE FOR SSM (Systems Manager Session Manager): This role allows AWS to manage your EC2 instances securely:without needing SSH. Required on ALL four instances.
+  SSMInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: kakwezi-peace-ssm-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        # This is the exact policy required by the lab for Session Manager access
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Tags:
+        - Key: Name
+          Value: kakwezi-peace-ssm-role
+
+  # Instance profile wraps the role so EC2 can use it
+  SSMInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: kakwezi-peace-ssm-profile
+      Roles:
+        - !Ref SSMInstanceRole
+
+  # 9. EC2 INSTANCES:Four total: 2 public web servers, 2 private app server:All use Amazon Linux 2 AMI and are accessed via SSM only.
+  WebServer1:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: !FindInMap [ RegionMap, !Ref AWS::Region, AMI ]
+      SubnetId: !Ref PublicSubnet1
+      IamInstanceProfile: !Ref SSMInstanceProfile
+      SecurityGroupIds:
+        - !Ref WebServerSG
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash
+          yum update -y
+          yum install -y httpd
+          systemctl start httpd
+          systemctl enable httpd
+          cat > /var/www/html/index.html <<EOF
+          <!DOCTYPE html>
+          <html>
+            <head>
+              <title>VPC Lab - Kakwezi Peace</title>
+              <style>
+                body { font-family: Arial, sans-serif; text-align: center; margin-top: 80px; background-color: #f0f4f8; }
+                h1 { color: #1a365d; font-size: 2.5em; }
+                h2 { color: #2d6a4f; font-size: 1.5em; }
+                p  { color: #555; font-size: 1.1em; }
+                .box { display: inline-block; padding: 40px 60px; background: white; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+              </style>
+            </head>
+            <body>
+              <div class="box">
+                <h1>Kakwezi Peace</h1>
+                <h2>Securely Deploying Resources in a VPC Using CloudFormation</h2>
+                <p>Web Server 1 &mdash; Availability Zone 1</p>
+                <p>Public Subnet | Apache HTTP Server</p>
+              </div>
+            </body>
+          </html>
+          EOF
+      Tags:
+        - Key: Name
+          Value: kakwezi-peace-web-server-1-az1
+
+  # --- Public Web Server 2 (AZ2) ---
+  WebServer2:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: !FindInMap [ RegionMap, !Ref AWS::Region, AMI ]
+      SubnetId: !Ref PublicSubnet2
+      IamInstanceProfile: !Ref SSMInstanceProfile
+      SecurityGroupIds:
+        - !Ref WebServerSG
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash
+          yum update -y
+          yum install -y httpd
+          systemctl start httpd
+          systemctl enable httpd
+          cat > /var/www/html/index.html <<EOF
+          <!DOCTYPE html>
+          <html>
+            <head>
+              <title>VPC Lab - Kakwezi Peace</title>
+              <style>
+                body { font-family: Arial, sans-serif; text-align: center; margin-top: 80px; background-color: #f0f4f8; }
+                h1 { color: #1a365d; font-size: 2.5em; }
+                h2 { color: #2d6a4f; font-size: 1.5em; }
+                p  { color: #555; font-size: 1.1em; }
+                .box { display: inline-block; padding: 40px 60px; background: white; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+              </style>
+            </head>
+            <body>
+              <div class="box">
+                <h1>Kakwezi Peace</h1>
+                <h2>Securely Deploying Resources in a VPC Using CloudFormation</h2>
+                <p>Web Server 2 &mdash; Availability Zone 2</p>
+                <p>Public Subnet | Apache HTTP Server</p>
+              </div>
+            </body>
+          </html>
+          EOF
+      Tags:
+        - Key: Name
+          Value: kakwezi-peace-web-server-2-az2
+
+  # --- Private App Server 1 (AZ1) ---
+  AppServer1:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: !FindInMap [ RegionMap, !Ref AWS::Region, AMI ]
+      SubnetId: !Ref PrivateSubnet1
+      IamInstanceProfile: !Ref SSMInstanceProfile
+      SecurityGroupIds:
+        - !Ref AppServerSG
+      Tags:
+        - Key: Name
+          Value: kakwezi-peace-app-server-1-az1
+
+  # --- Private App Server 2 (AZ2) ---
+  AppServer2:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: !FindInMap [ RegionMap, !Ref AWS::Region, AMI ]
+      SubnetId: !Ref PrivateSubnet2
+      IamInstanceProfile: !Ref SSMInstanceProfile
+      SecurityGroupIds:
+        - !Ref AppServerSG
+      Tags:
+        - Key: Name
+          Value: kakwezi-peace-app-server-2-az2
+
+# OUTPUTS
+# These values appear in the CloudFormation console after deployment.
+Outputs:
+
+  VPCId:
+    Description: VPC ID
+    Value: !Ref MyVPC
+
+  WebServer1PublicIP:
+    Description: Public IP of Web Server 1 (AZ1) - open this in your browser
+    Value: !GetAtt WebServer1.PublicIp
+
+  WebServer2PublicIP:
+    Description: Public IP of Web Server 2 (AZ2) - open this in your browser
+    Value: !GetAtt WebServer2.PublicIp
+
+  AppServer1PrivateIP:
+    Description: Private IP of App Server 1 (AZ1) - use this for ping tests
+    Value: !GetAtt AppServer1.PrivateIp
+
+  AppServer2PrivateIP:
+    Description: Private IP of App Server 2 (AZ2) - use this for ping tests
+    Value: !GetAtt AppServer2.PrivateIp
