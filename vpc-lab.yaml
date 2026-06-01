@@ -8,6 +8,11 @@ Parameters:
     Type: String
     Default: t2.micro
     Description: EC2 instance type for all instances
+    
+  LatestAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+    Description: Automatically fetches the latest Amazon Linux 2023 AMI for the region  
 
 Resources:
 
@@ -273,7 +278,7 @@ Resources:
     Type: AWS::EC2::Instance
     Properties:
       InstanceType: !Ref InstanceType
-      ImageId: ami-0023ac0d700b21c0b
+      ImageId: !Ref LatestAmiId
       SubnetId: !Ref PublicSubnet1
       IamInstanceProfile: !Ref SSMInstanceProfile
       SecurityGroupIds:
@@ -317,7 +322,7 @@ Resources:
     Type: AWS::EC2::Instance
     Properties:
       InstanceType: !Ref InstanceType
-      ImageId: ami-0023ac0d700b21c0b
+      ImageId: !Ref LatestAmiId
       SubnetId: !Ref PublicSubnet2
       IamInstanceProfile: !Ref SSMInstanceProfile
       SecurityGroupIds:
@@ -361,7 +366,7 @@ Resources:
     Type: AWS::EC2::Instance
     Properties:
       InstanceType: !Ref InstanceType
-      ImageId: ami-0023ac0d700b21c0b
+      ImageId: !Ref LatestAmiId
       SubnetId: !Ref PrivateSubnet1
       IamInstanceProfile: !Ref SSMInstanceProfile
       SecurityGroupIds:
@@ -375,7 +380,7 @@ Resources:
     Type: AWS::EC2::Instance
     Properties:
       InstanceType: !Ref InstanceType
-      ImageId: ami-0023ac0d700b21c0b
+      ImageId: !Ref LatestAmiId
       SubnetId: !Ref PrivateSubnet2
       IamInstanceProfile: !Ref SSMInstanceProfile
       SecurityGroupIds:
