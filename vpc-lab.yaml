@@ -273,7 +273,7 @@ Resources:
     Type: AWS::EC2::Instance
     Properties:
       InstanceType: !Ref InstanceType
-      ImageId: ami-00e801948462f718a
+      ImageId: ami-0023ac0d700b21c0b
       SubnetId: !Ref PublicSubnet1
       IamInstanceProfile: !Ref SSMInstanceProfile
       SecurityGroupIds:
@@ -317,7 +317,7 @@ Resources:
     Type: AWS::EC2::Instance
     Properties:
       InstanceType: !Ref InstanceType
-      ImageId: ami-00e801948462f718a
+      ImageId: ami-0023ac0d700b21c0b
       SubnetId: !Ref PublicSubnet2
       IamInstanceProfile: !Ref SSMInstanceProfile
       SecurityGroupIds:
@@ -361,7 +361,7 @@ Resources:
     Type: AWS::EC2::Instance
     Properties:
       InstanceType: !Ref InstanceType
-      ImageId: ami-00e801948462f718a
+      ImageId: ami-0023ac0d700b21c0b
       SubnetId: !Ref PrivateSubnet1
       IamInstanceProfile: !Ref SSMInstanceProfile
       SecurityGroupIds:
@@ -375,7 +375,7 @@ Resources:
     Type: AWS::EC2::Instance
     Properties:
       InstanceType: !Ref InstanceType
-      ImageId: ami-00e801948462f718a
+      ImageId: ami-0023ac0d700b21c0b
       SubnetId: !Ref PrivateSubnet2
       IamInstanceProfile: !Ref SSMInstanceProfile
       SecurityGroupIds:
