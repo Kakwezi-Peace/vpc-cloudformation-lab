@@ -220,11 +220,6 @@ Resources:
           FromPort: -1
           ToPort: -1
           CidrIp: 10.0.0.0/16
-        - IpProtocol: tcp
-          FromPort: 443
-          ToPort: 443
-          CidrIp: 0.0.0.0/0
-
       SecurityGroupEgress:
         - IpProtocol: -1
           CidrIp: 0.0.0.0/0
